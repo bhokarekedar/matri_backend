@@ -11,8 +11,8 @@ import { createUserHandler, getUserByIdHandler } from "../handlers/users.mjs";
 import { getAllGeneralInfo } from "../handlers/generalInfo.mjs";
 
 const router = Router();
-
-router.get(
+//added
+router.get( 
 	"/api/generalInfo/",
 	getAllGeneralInfo
 );
