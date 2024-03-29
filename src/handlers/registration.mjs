@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 import { ReligionData } from "../mongoose/schemas/religion.mjs";
 import { SubReligionData } from "../mongoose/schemas/subReligion.mjs";
 import { CasteData } from "../mongoose/schemas/caste.mjs";
@@ -12,6 +13,12 @@ import { UsersFamilyInfo } from "../mongoose/schemas/usersFamilyInfo.mjs";
 import { UsersDietInfo } from "../mongoose/schemas/usersDietInfo.mjs";
 import { UsersHorrorscopeInfo } from "../mongoose/schemas/usersHorrorscopeInfo.mjs";
 import { UsersIdealPartnerInfo } from "../mongoose/schemas/usersIdealPartnerInfo.mjs";
+import {
+  comparePassword,
+  decodedToken,
+  generateUniqueMatrimonialName,
+  hashPassword,
+} from "../utils/helpers.mjs";
 
 // const ObjectId =new mongoose.Types.ObjectId();
 export const getAllRelegions = async (request, response) => {
@@ -73,10 +80,41 @@ export const getCasteData = async (request, response) => {
   }
 };
 
+export const getUserData = async (request, response) => {
+  try {
+    let decodedTokenValues = decodedToken(request);
+
+    console.log("decodedTokenValues", decodedTokenValues);
+    if (!decodedTokenValues?.userId) {
+      return response
+        .status(401)
+        .json({ message: "Invalid email or password" });
+    }
+    const user = await User.findOne({ _id: decodedTokenValues?.userId });
+
+    //send email
+    // if(!user?.isVerified){
+
+    // }
+    // else
+    if (user?.role === "user" && user?.plan === "free") {
+    } else if (
+      user?.role === "user" &&
+      user?.plan === "paid" &&
+      user?.planExpiryDate
+    ) {
+    }
+
+    return response.json("newArr");
+  } catch (err) {
+    console.error(err);
+    return response.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export const createNewUser = async (req, res) => {
   try {
     const {
-      username,
       email,
       password,
       profile_for,
@@ -115,7 +153,19 @@ export const createNewUser = async (req, res) => {
       other_caste,
     } = req.body;
     // Create a new user
-    const user = new User({ username, email, password });
+
+    const existingUser = await User.findOne({ email });
+    const existingPhone = await User.findOne({ mobile_number });
+    const hashedPassword = await hashPassword(password);
+    if (existingUser) {
+      return res.status(409).json({ error: "Email already exists" });
+    }
+    if (existingPhone) {
+      return res.status(409).json({ error: "Phone number already exists" });
+    }
+    const username = await generateUniqueMatrimonialName();
+
+    const user = new User({ username, email, password: hashedPassword });
     await user.save();
 
     // Create a new profile for the user
@@ -234,6 +284,45 @@ export const getFilteredUsers = async (req, res) => {
   }
 };
 
+export const loginUser = async (req, res) => {
+  const { loginId, password } = req.body;
+
+  try {
+    if (!(loginId && password)) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+    const user = await User.findOne({ email: loginId });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const isMatch = await comparePassword(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        //  username: user.username,
+        //  email: user.email,
+        //  isVerified: user.isVerified,
+        //  role: user.role,
+        //  plan: user.plan,
+        //  planExpiryDate: user.planExpiryDate,
+      },
+      "process.env.JWT_SECRET",
+      { expiresIn: "1d" }
+    );
+    // User authenticated, generate JWT or set session
+
+    res.json({ message: "Login successful", token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const updateFamilyInfo = async (req, res) => {
   try {
     let fileds = [
@@ -250,17 +339,21 @@ export const updateFamilyInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersFamilyInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersFamilyInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -283,17 +376,21 @@ export const updateContactInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersContactInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersContactInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -303,29 +400,28 @@ export const updateContactInfo = async (req, res) => {
 
 export const updateDietInfo = async (req, res) => {
   try {
-    let fileds = [
-      "daily_diet",
-      "food_preference",
-      "smoking",
-      "drinking",
-    ];
+    let fileds = ["daily_diet", "food_preference", "smoking", "drinking"];
     let fieldsToUpdate = [];
     fileds.map((field, index) => {
       if (req.body.hasOwnProperty(field)) {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersDietInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersDietInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -352,17 +448,21 @@ export const updateEducationAndWorkInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersEducationAndWorkInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersEducationAndWorkInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -393,17 +493,21 @@ export const updateHorrorscopeInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersHorrorscopeInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersHorrorscopeInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -431,17 +535,21 @@ export const updateIdealPartnerInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersIdealPartnerInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersIdealPartnerInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -467,17 +575,21 @@ export const updatePersonalInfo = async (req, res) => {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersPersonalInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersPersonalInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
@@ -487,29 +599,28 @@ export const updatePersonalInfo = async (req, res) => {
 
 export const updateUsersRelegionInfo = async (req, res) => {
   try {
-    let fileds = [
-      "religion",
-      "sub_religion",
-      "caste",
-      "other_caste",
-    ];
+    let fileds = ["religion", "sub_religion", "caste", "other_caste"];
     let fieldsToUpdate = [];
     fileds.map((field, index) => {
       if (req.body.hasOwnProperty(field)) {
         fieldsToUpdate.push(field);
       }
     });
-    let data = {}
+    let data = {};
     fieldsToUpdate.map((fieldToUpdate, index) => {
-      data[fieldToUpdate] = req.body[fieldToUpdate]
-    })
-    if(data?.profile_id){
+      data[fieldToUpdate] = req.body[fieldToUpdate];
+    });
+    if (data?.profile_id) {
       const filter = { profile_id: data.profile_id };
-      let doc = await UsersRelegionInfo.findOneAndUpdate(filter, data, { upsert: true, new: true });
+      let doc = await UsersRelegionInfo.findOneAndUpdate(filter, data, {
+        upsert: true,
+        new: true,
+      });
       res.status(200).json(doc);
-    }
-    else{
-      return res.status(400).json({ message: "No match found for the provided query." });
+    } else {
+      return res
+        .status(400)
+        .json({ message: "No match found for the provided query." });
     }
   } catch (err) {
     console.error(err);
